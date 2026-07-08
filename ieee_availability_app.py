@@ -1,5 +1,5 @@
-# To deliver this product as soon as possible and to help IEEE TIP Student Branch as fast as this product could, the code is generated through Claude Sonnet 5. 
-# I laid out the whole system architecture to Claude and let itself write the code for it. - Drew
+# To deliver this product as soon as possible and to help IEEE TIP Student Branch as fast as this product could, the code is generated through Claude Sonnet 5 and GPT5.5 
+# I laid out the whole system architecture to Claude and ChatGPT letting them write the code for it. - Drew
 # This application loads in a formatted csv designed by IEEE TIP STudent Branch's Secretariat Committee, and is compatible to other schedule CSVs following the same format. This is to scale the product to future officers who would like to quickly check officer schedules and availability.
 # There's also an executable file for this app in the releases section. :)
 
@@ -38,10 +38,19 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
-    QMessageBox, QHeaderView, QGroupBox, QFormLayout, QLineEdit, QTextEdit,
-    QSizePolicy, QFrame
+    QApplication, QMainWindow, QWidget, QTabWidget,
+    QVBoxLayout, QHBoxLayout,
+    QLabel, QComboBox, QPushButton,
+    QTableWidget, QTableWidgetItem,
+    QFileDialog, QMessageBox,
+    QHeaderView, QGroupBox,
+    QFormLayout, QLineEdit,
+    QTextEdit, QSizePolicy,
+    QFrame,
+    QCheckBox,
+    QListWidget,
+    QListWidgetItem,
+    QAbstractItemView
 )
 from PyQt6.QtGui import QAction, QFont, QColor
 from PyQt6.QtCore import Qt
@@ -166,6 +175,60 @@ def compute_free_windows(data: TimetableData, day: str, officer: str) -> List[Tu
     return windows
 
 
+def intersect_windows(windows_lists):
+    """
+    Returns the common availability between multiple officers.
+
+    windows_lists:
+        [
+            [("7:30","9:00"), ("10:00","11:30")],
+            [("8:00","9:00"), ("10:30","11:30")]
+        ]
+    """
+
+    if not windows_lists:
+        return []
+
+    def to_minutes(label):
+        h, m = map(int, label.split(":"))
+        if h == 12:
+            h = 0
+        return h * 60 + m
+
+    common = windows_lists[0]
+
+    for other in windows_lists[1:]:
+
+        new_common = []
+
+        for s1, e1 in common:
+            for s2, e2 in other:
+
+                start = max(to_minutes(s1), to_minutes(s2))
+                end = min(to_minutes(e1), to_minutes(e2))
+
+                if start < end:
+
+                    def back(minutes):
+                        h = minutes // 60
+                        m = minutes % 60
+
+                        if h == 0:
+                            h = 12
+
+                        return f"{h}:{m:02d}"
+
+                    new_common.append(
+                        (
+                            back(start),
+                            back(end)
+                        )
+                    )
+
+        common = new_common
+
+    return common
+
 def is_free_for_range(data: TimetableData, day: str, officer: str,
                        start_label: str, end_label: str) -> Tuple[bool, List[str]]:
     """Check whether officer is free for every slot within
@@ -187,6 +250,48 @@ def is_free_for_range(data: TimetableData, day: str, officer: str,
             conflicts.append(slot_label)
 
     return (len(conflicts) == 0, conflicts)
+
+
+def check_multiple_officers(data, officers, day, start_label, end_label):
+    """
+    Returns
+
+    results:
+    {
+        officer:
+        {
+            "available": bool,
+            "conflicts":[]
+        }
+    }
+
+    common_available:
+        True if ALL officers are available.
+    """
+
+    results = {}
+
+    everyone_available = True
+
+    for officer in officers:
+
+        available, conflicts = is_free_for_range(
+            data,
+            day,
+            officer,
+            start_label,
+            end_label
+        )
+
+        results[officer] = {
+            "available": available,
+            "conflicts": conflicts
+        }
+
+        if not available:
+            everyone_available = False
+
+    return results, everyone_available
 
 
 def compute_schedule(data: TimetableData, officer: str) -> List[Tuple[str, str]]:
@@ -346,6 +451,84 @@ QComboBox QAbstractItemView {
 }
 """
 
+class OfficerSelector(QWidget):
+    """
+    Reusable widget that allows selecting one or more officers.
+    Used in:
+        • Full Availability
+        • Range Mode
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QVBoxLayout(self)
+
+        self.list = QListWidget()
+        self.list.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+
+        layout.addWidget(self.list)
+
+        btn_layout = QHBoxLayout()
+
+        self.select_all_btn = QPushButton("Select All")
+        self.clear_btn = QPushButton("Clear")
+
+        btn_layout.addWidget(self.select_all_btn)
+        btn_layout.addWidget(self.clear_btn)
+
+        layout.addLayout(btn_layout)
+
+        self.select_all_btn.clicked.connect(self.select_all)
+        self.clear_btn.clicked.connect(self.clear_all)
+
+    def load_officers(self, officers):
+
+        self.list.clear()
+
+        for officer in officers:
+
+            item = QListWidgetItem(officer)
+
+            item.setFlags(
+                item.flags() |
+                Qt.ItemFlag.ItemIsUserCheckable
+            )
+
+            item.setCheckState(Qt.CheckState.Unchecked)
+
+            self.list.addItem(item)
+
+    def get_selected(self):
+
+        selected = []
+
+        for i in range(self.list.count()):
+
+            item = self.list.item(i)
+
+            if item.checkState() == Qt.CheckState.Checked:
+                selected.append(item.text())
+
+        return selected
+
+    def select_all(self):
+
+        for i in range(self.list.count()):
+
+            self.list.item(i).setCheckState(
+                Qt.CheckState.Checked
+            )
+
+    def clear_all(self):
+
+        for i in range(self.list.count()):
+
+            self.list.item(i).setCheckState(
+                Qt.CheckState.Unchecked
+            )
 
 class BaseTab(QWidget):
     """Shared behavior: tabs need access to the currently loaded data,
@@ -362,173 +545,387 @@ class BaseTab(QWidget):
 class FullAvailabilityTab(BaseTab):
     def __init__(self, get_data_callback):
         super().__init__(get_data_callback)
+
         layout = QVBoxLayout(self)
 
-        box = QGroupBox("Find every free window for an officer")
+        box = QGroupBox("Find every free window for one or more officers")
         form = QFormLayout()
-        self.officer_combo = QComboBox()
+
+        self.officer_selector = OfficerSelector()
+
         self.day_combo = QComboBox()
         self.day_combo.addItem("All Days")
-        form.addRow("Officer:", self.officer_combo)
+
+        form.addRow("Officer(s):", self.officer_selector)
         form.addRow("Day:", self.day_combo)
+
         box.setLayout(form)
 
-        btn_row = QHBoxLayout()
         self.compute_btn = QPushButton("Show Free Times")
         self.compute_btn.clicked.connect(self.compute)
-        btn_row.addStretch()
-        btn_row.addWidget(self.compute_btn)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Day", "Free From", "Free To"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(
+            ["Officer", "Day", "Free From", "Free To"]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         layout.addWidget(box)
-        layout.addLayout(btn_row)
+        layout.addWidget(self.compute_btn)
         layout.addWidget(self.table)
 
     def on_data_changed(self):
         data = self.get_data()
-        self.officer_combo.clear()
+
         self.day_combo.clear()
         self.day_combo.addItem("All Days")
-        if data:
-            self.officer_combo.addItems(data.officers)
-            self.day_combo.addItems(data.days)
+
         self.table.setRowCount(0)
 
+        if data:
+            self.officer_selector.load_officers(data.officers)
+            self.day_combo.addItems(data.days)
+
     def compute(self):
+
         data = self.get_data()
+
         if not data:
-            QMessageBox.warning(self, "No data", "Load a timetable CSV first (Settings tab).")
+            QMessageBox.warning(
+                self,
+                "No data",
+                "Load a timetable CSV first."
+            )
             return
-        officer = self.officer_combo.currentText()
-        if not officer:
-            QMessageBox.warning(self, "No officer", "Please select an officer.")
+
+        officers = self.officer_selector.get_selected()
+
+        if not officers:
+            QMessageBox.warning(
+                self,
+                "No officers",
+                "Select at least one officer."
+            )
             return
+
         day_selection = self.day_combo.currentText()
-        days = data.days if day_selection == "All Days" else [day_selection]
+
+        days = (
+            data.days
+            if day_selection == "All Days"
+            else [day_selection]
+        )
 
         rows = []
-        for day in days:
-            windows = compute_free_windows(data, day, officer)
-            for start, end in windows:
-                rows.append((day, start, end))
+
+        for officer in officers:
+
+            for day in days:
+
+                windows = compute_free_windows(
+                    data,
+                    day,
+                    officer
+                )
+
+                for start, end in windows:
+
+                    rows.append(
+                        (
+                            officer,
+                            day,
+                            start,
+                            end
+                        )
+                    )
 
         self.table.setRowCount(len(rows))
-        for r, (day, start, end) in enumerate(rows):
-            self.table.setItem(r, 0, QTableWidgetItem(day))
-            self.table.setItem(r, 1, QTableWidgetItem(start))
-            self.table.setItem(r, 2, QTableWidgetItem(end))
+
+        for r, row in enumerate(rows):
+
+            for c, value in enumerate(row):
+
+                self.table.setItem(
+                    r,
+                    c,
+                    QTableWidgetItem(value)
+                )
 
         if not rows:
-            QMessageBox.information(self, "No free time",
-                                     f"{officer} has no recorded free windows for the selected day(s).")
+
+            QMessageBox.information(
+                self,
+                "No free time",
+                "No free windows found."
+            )
 
 
 class RangeModeTab(BaseTab):
+
     def __init__(self, get_data_callback):
+
         super().__init__(get_data_callback)
+
         layout = QVBoxLayout(self)
 
-        box = QGroupBox("Check availability for a specific time range")
-        form = QFormLayout()
-        self.officer_combo = QComboBox()
-        self.day_combo = QComboBox()
-        self.start_combo = QComboBox()
-        self.end_combo = QComboBox()
-        self.start_combo.currentIndexChanged.connect(self.refresh_end_options)
+        box = QGroupBox(
+            "Check Multiple Officer Availability"
+        )
 
-        form.addRow("Officer:", self.officer_combo)
-        form.addRow("Day:", self.day_combo)
-        form.addRow("From:", self.start_combo)
-        form.addRow("To:", self.end_combo)
+        form = QFormLayout()
+
+        self.officer_selector = OfficerSelector()
+
+        self.day_combo = QComboBox()
+
+        self.start_combo = QComboBox()
+
+        self.end_combo = QComboBox()
+
+        self.start_combo.currentIndexChanged.connect(
+            self.refresh_end_options
+        )
+
+        form.addRow(
+            "Officers:",
+            self.officer_selector
+        )
+
+        form.addRow(
+            "Day:",
+            self.day_combo
+        )
+
+        form.addRow(
+            "From:",
+            self.start_combo
+        )
+
+        form.addRow(
+            "To:",
+            self.end_combo
+        )
+
         box.setLayout(form)
 
-        btn_row = QHBoxLayout()
-        self.check_btn = QPushButton("Check Availability")
-        self.check_btn.clicked.connect(self.check_range)
-        btn_row.addStretch()
-        btn_row.addWidget(self.check_btn)
+        layout.addWidget(box)
 
-        self.result_label = QLabel("")
-        self.result_label.setProperty("role", "status")
-        self.result_label.setWordWrap(True)
+        self.check_btn = QPushButton(
+            "Check Availability"
+        )
+
+        self.check_btn.clicked.connect(
+            self.check_range
+        )
+
+        layout.addWidget(
+            self.check_btn
+        )
+
+        self.result_text = QTextEdit()
+        self.result_text.setReadOnly(True)
+
+        layout.addWidget(
+            self.result_text
+        )
 
         self.conflict_table = QTableWidget()
-        self.conflict_table.setColumnCount(1)
-        self.conflict_table.setHorizontalHeaderLabels(["Conflicting Slot (officer is busy)"])
-        self.conflict_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.conflict_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-        layout.addWidget(box)
-        layout.addLayout(btn_row)
-        layout.addWidget(self.result_label)
-        layout.addWidget(self.conflict_table)
+        self.conflict_table.setColumnCount(3)
+
+        self.conflict_table.setHorizontalHeaderLabels(
+
+            [
+                "Officer",
+                "Day",
+                "Conflict Time"
+            ]
+
+        )
+
+        self.conflict_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        layout.addWidget(
+            self.conflict_table
+        )
 
     def on_data_changed(self):
+
         data = self.get_data()
-        self.officer_combo.clear()
+
         self.day_combo.clear()
         self.start_combo.clear()
         self.end_combo.clear()
-        self.result_label.setText("")
-        self.result_label.setStyleSheet("")
+
+        self.result_text.clear()
+
         self.conflict_table.setRowCount(0)
+
         if data:
-            self.officer_combo.addItems(data.officers)
-            self.day_combo.addItems(data.days)
-            self.start_combo.addItems(data.boundaries()[:-1])
+
+            self.officer_selector.load_officers(
+                data.officers
+            )
+
+            self.day_combo.addItems(
+                data.days
+            )
+
+            self.start_combo.addItems(
+                data.boundaries()[:-1]
+            )
+
             self.refresh_end_options()
 
     def refresh_end_options(self):
+
         data = self.get_data()
+
         if not data:
             return
+
         boundaries = data.boundaries()
-        start_label = self.start_combo.currentText()
-        if start_label not in boundaries:
+
+        start = self.start_combo.currentText()
+
+        if start not in boundaries:
             return
-        start_idx = boundaries.index(start_label)
+
+        idx = boundaries.index(start)
+
         self.end_combo.clear()
-        self.end_combo.addItems(boundaries[start_idx + 1:])
+
+        self.end_combo.addItems(
+
+            boundaries[idx + 1:]
+
+        )
 
     def check_range(self):
+
         data = self.get_data()
+
         if not data:
-            QMessageBox.warning(self, "No data", "Load a timetable CSV first (Settings tab).")
+
+            QMessageBox.warning(
+                self,
+                "No data",
+                "Please import a timetable."
+            )
+
             return
-        officer = self.officer_combo.currentText()
+
+        officers = self.officer_selector.get_selected()
+
+        if len(officers) == 0:
+
+            QMessageBox.warning(
+                self,
+                "No officers",
+                "Please select at least one officer."
+            )
+
+            return
+
         day = self.day_combo.currentText()
-        start_label = self.start_combo.currentText()
-        end_label = self.end_combo.currentText()
-        if not (officer and day and start_label and end_label):
-            QMessageBox.warning(self, "Missing selection", "Please select officer, day, start and end time.")
-            return
 
-        try:
-            is_free, conflicts = is_free_for_range(data, day, officer, start_label, end_label)
-        except ValueError as e:
-            QMessageBox.warning(self, "Invalid range", str(e))
-            return
+        start = self.start_combo.currentText()
 
-        if is_free:
-            self.result_label.setText(
-                f"✅  {officer} IS FREE on {day} from {start_label} to {end_label}."
+        end = self.end_combo.currentText()
+
+        results, everyone_available = check_multiple_officers(
+
+            data,
+            officers,
+            day,
+            start,
+            end
+
+        )
+
+        summary = []
+
+        rows = []
+
+        for officer in officers:
+
+            available = results[officer]["available"]
+
+            conflicts = results[officer]["conflicts"]
+
+            if available:
+
+                summary.append(
+
+                    f"✅ {officer} IS FREE "
+                    f"from {start} to {end}"
+
+                )
+
+            else:
+
+                summary.append(
+
+                    f"❌ {officer} is NOT FREE\n"
+                    f"Busy at: {', '.join(conflicts)}"
+
+                )
+
+                for conflict in conflicts:
+
+                    rows.append(
+
+                        (
+                            officer,
+                            day,
+                            conflict
+                        )
+
+                    )
+
+        summary.append("\n")
+
+        if everyone_available:
+
+            summary.append(
+                "🎉 ALL SELECTED OFFICERS ARE AVAILABLE."
             )
-            self.result_label.setStyleSheet("background:#e3f6e5; color:#1e6b2e; border:1px solid #b3e0bb;")
+
         else:
-            self.result_label.setText(
-                f"❌  {officer} is NOT free for the entire range on {day} from {start_label} to {end_label}. "
-                f"Conflicts found in {len(conflicts)} slot(s) below."
-            )
-            self.result_label.setStyleSheet("background:#fbe4e4; color:#8a1f1f; border:1px solid #f0b3b3;")
 
-        self.conflict_table.setRowCount(len(conflicts))
-        for r, slot in enumerate(conflicts):
-            self.conflict_table.setItem(r, 0, QTableWidgetItem(slot))
+            summary.append(
+                "⚠ NOT EVERYONE IS AVAILABLE."
+            )
+
+        self.result_text.setPlainText(
+
+            "\n\n".join(summary)
+
+        )
+
+        self.conflict_table.setRowCount(
+
+            len(rows)
+
+        )
+
+        for r, row in enumerate(rows):
+
+            for c, value in enumerate(row):
+
+                self.conflict_table.setItem(
+
+                    r,
+                    c,
+                    QTableWidgetItem(value)
+
+                )
 
 
 class ScheduleModeTab(BaseTab):
