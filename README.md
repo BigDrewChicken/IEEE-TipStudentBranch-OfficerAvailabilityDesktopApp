@@ -1,3 +1,7 @@
+<div align='center'>
+<a href=https://www.facebook.com/ieeetipsb> <img src='assets/readme_header.png'> </a> 
+</div>
+
 # IEEE TIP Student Branch Officer Availability
 
 A desktop application built with **PyQt6** that allows officers of the **IEEE Technological Institute of the Philippines Student Branch** to quickly check officer availability based on the organization's non-availability timetable.
@@ -12,17 +16,19 @@ Instead of manually scanning an entire spreadsheet, the application automaticall
 * 👤 Automatically detect officer names from the imported timetable
 * 📅 Full Availability Mode
 
-  * Displays every free time window for a selected officer
+  * Displays every free time window for one or more selected officers
 * ⏰ Range Mode
 
-  * Checks whether an officer is available within a specified day and time range
+  * Checks whether multiple selected officers are available within a specified day and time range
+  * Displays individual availability results for each selected officer
+  * Displays conflicting officers and their conflicting time slots
+  * Finds the next common available time window for all selected officers
 * 📋 Schedule Mode
 
   * Displays every recorded non-availability entry for an officer
 * ⚙️ Settings page for loading and reloading timetable files
 * 🖥️ Standalone desktop application built with PyQt6
 * 🔄 Compatible with future timetable CSVs that follow the same format
-
 ---
 
 ## How It Works
@@ -56,15 +62,22 @@ John is available from 9:30 to 10:30
 
 ### Full Availability
 
-Returns every available time window for a selected officer across one day or the entire week.
+Returns every available time window for one or more selected officers across one day or the entire week.
 
+Multiple officers may be selected simultaneously to quickly compare individual availability.
 ---
 
 ### Range Mode
 
-Checks whether an officer is available between a selected start time and end time on a chosen day.
+Checks whether one or more selected officers are available between a selected start time and end time on a chosen day.
 
-If the officer is unavailable, the application displays the conflicting time slots.
+For each selected officer, the application:
+
+* Indicates whether the officer is available for the entire range
+* Displays any conflicting time slots if unavailable
+* Lists conflicts in a table containing the officer's name, day, and conflicting time
+
+The application can also suggest the next common available time window shared by all selected officers, making it easier to schedule meetings.
 
 ---
 
@@ -134,7 +147,13 @@ pip install pyinstaller
 Generate a standalone executable:
 
 ```bash
-pyinstaller -F -w --name "IEEE Officer Availability" ieee_availability_app.py
+pyinstaller --clean -F -w --icon=assets/app_icon.ico --name "IEEE Officer Availability" ieee_availability_app.py
+```
+
+If the application uses additional assets (such as logos or images), include the assets folder when building:
+
+```bash
+pyinstaller --clean -F -w --icon=assets/icon.ico --add-data "assets;assets" --name "IEEE Officer Availability" ieee_availability_app.py
 ```
 
 The executable will be generated in:
@@ -142,8 +161,6 @@ The executable will be generated in:
 ```
 dist/
 ```
-
----
 
 ## Technologies Used
 
@@ -157,7 +174,7 @@ dist/
 
 This project was developed for the **IEEE Technological Institute of the Philippines Student Branch** to simplify officer schedule management and improve coordination among officers.
 
-The software architecture, testing, and integration were designed by the project developer. The implementation were generated with the assistance of Claude Sonnet 5 and were subsequently reviewed, integrated, and adapted to meet the project's functional requirements.
+The software architecture, testing, and integration were designed by the project developer. The implementation were generated with the assistance of Claude Sonnet 5 and GPT5.5, which were subsequently reviewed, integrated, and adapted to meet the project's functional requirements.
 
 This project was made with the authorization of the then-chair of the IEEE TIP Student Branch.
 
